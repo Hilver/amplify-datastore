@@ -1,11 +1,13 @@
 import Observable from 'zen-observable-ts';
 import { PredicateAll } from '../predicates';
-import { ConflictHandler, DataStoreConfig, ModelInit, ModelInstanceMetadata, NonModelTypeConstructor, ProducerPaginationInput, PersistentModel, PersistentModelConstructor, ProducerModelPredicate, Schema, SubscriptionMessage, ErrorHandler } from '../types';
+import { ConflictHandler, DataStoreConfig, ModelInit, ModelInstanceMetadata, NonModelTypeConstructor, ProducerPaginationInput, PersistentModel, PersistentModelConstructor, ProducerModelPredicate, Schema, SubscriptionMessage, TypeConstructorMap, ErrorHandler } from '../types';
+export declare let syncClasses: TypeConstructorMap;
 declare const initSchema: (userSchema: Schema) => Record<string, PersistentModelConstructor<any> | NonModelTypeConstructor<any>>;
 export declare type ModelInstanceCreator = typeof modelInstanceCreator;
 declare function modelInstanceCreator<T extends PersistentModel = PersistentModel>(modelConstructor: PersistentModelConstructor<T>, init: ModelInit<T> & Partial<ModelInstanceMetadata>): T;
 declare class DataStore {
     private amplifyConfig;
+    private authModeStrategy;
     private conflictHandler;
     private errorHandler;
     private fullSyncInterval;

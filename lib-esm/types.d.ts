@@ -1,5 +1,6 @@
 import { ModelInstanceCreator } from './datastore/datastore';
 import { PredicateAll } from './predicates';
+import { GRAPHQL_AUTH_MODE } from '@aws-amplify/api-graphql';
 export declare type Schema = UserSchema & {
     version: string;
 };
@@ -41,6 +42,7 @@ export declare type ModelAssociation = AssociatedWith | TargetNameAssociation;
 declare type AssociatedWith = {
     connectionType: 'HAS_MANY' | 'HAS_ONE';
     associatedWith: string;
+    targetName?: string;
 };
 export declare function isAssociatedWith(obj: any): obj is AssociatedWith;
 declare type TargetNameAssociation = {
@@ -53,6 +55,27 @@ declare type ModelAttribute = {
     type: string;
     properties?: Record<string, any>;
 };
+export declare type ModelAttributeAuthProperty = {
+    allow: ModelAttributeAuthAllow;
+    identityClaim?: string;
+    groupClaim?: string;
+    groups?: string[];
+    operations?: string[];
+    ownerField?: string;
+    provider?: ModelAttributeAuthProvider;
+};
+export declare enum ModelAttributeAuthAllow {
+    OWNER = "owner",
+    GROUPS = "groups",
+    PRIVATE = "private",
+    PUBLIC = "public"
+}
+export declare enum ModelAttributeAuthProvider {
+    USER_POOLS = "userPools",
+    OIDC = "oidc",
+    IAM = "iam",
+    API_KEY = "apiKey"
+}
 export declare type ModelFields = Record<string, ModelField>;
 export declare enum GraphQLScalarType {
     ID = 0,
@@ -116,7 +139,7 @@ export declare type TypeConstructorMap = Record<string, PersistentModelConstruct
 export declare type PersistentModel = Readonly<{
     id: string;
 } & Record<string, any>>;
-export declare type ModelInit<T> = Omit<T, 'id'>;
+export declare type ModelInit<T> = Partial<T>;
 declare type DeepWritable<T> = {
     -readonly [P in keyof T]: T[P] extends TypeName<T[P]> ? T[P] : DeepWritable<T[P]>;
 };
@@ -260,6 +283,7 @@ export declare type RelationshipType = {
 };
 export declare type DataStoreConfig = {
     DataStore?: {
+        authModeStrategyType?: AuthModeStrategyType;
         conflictHandler?: ConflictHandler;
         errorHandler?: (error: SyncError) => void;
         maxRecordsToSync?: number;
@@ -267,6 +291,7 @@ export declare type DataStoreConfig = {
         fullSyncInterval?: number;
         syncExpressions?: SyncExpression[];
     };
+    authModeStrategyType?: AuthModeStrategyType;
     conflictHandler?: ConflictHandler;
     errorHandler?: (error: SyncError) => void;
     maxRecordsToSync?: number;
@@ -274,6 +299,26 @@ export declare type DataStoreConfig = {
     fullSyncInterval?: number;
     syncExpressions?: SyncExpression[];
 };
+export declare enum AuthModeStrategyType {
+    DEFAULT = "DEFAULT",
+    MULTI_AUTH = "MULTI_AUTH"
+}
+export declare type AuthModeStrategyReturn = GRAPHQL_AUTH_MODE | GRAPHQL_AUTH_MODE[] | undefined | null;
+export declare type AuthModeStrategyParams = {
+    schema: InternalSchema;
+    modelName: string;
+    operation: ModelOperation;
+};
+export declare type AuthModeStrategy = (authModeStrategyParams: AuthModeStrategyParams) => AuthModeStrategyReturn | Promise<AuthModeStrategyReturn>;
+export declare enum ModelOperation {
+    CREATE = "CREATE",
+    READ = "READ",
+    UPDATE = "UPDATE",
+    DELETE = "DELETE"
+}
+export declare type ModelAuthModes = Record<string, {
+    [Property in ModelOperation]: GRAPHQL_AUTH_MODE[];
+}>;
 export declare type SyncExpression = Promise<{
     modelConstructor: any;
     conditionProducer: (c?: any) => any;

@@ -20,7 +20,7 @@ declare class StorageClass implements StorageFacade {
     constructor(schema: InternalSchema, namespaceResolver: NamespaceResolver, getModelConstructorByModelName: (namsespaceName: string, modelName: string) => PersistentModelConstructor<any>, modelInstanceCreator: ModelInstanceCreator, adapter?: Adapter, sessionId?: string);
     static getNamespace(): SchemaNamespace;
     init(): Promise<void>;
-    save<T extends PersistentModel>(model: T, condition?: ModelPredicate<T>, mutator?: Symbol, patches?: Patch[]): Promise<[T, OpType.INSERT | OpType.UPDATE][]>;
+    save<T extends PersistentModel>(model: T, condition?: ModelPredicate<T>, mutator?: Symbol, patchesTuple?: [Patch[], PersistentModel]): Promise<[T, OpType.INSERT | OpType.UPDATE][]>;
     delete<T extends PersistentModel>(model: T, condition?: ModelPredicate<T>, mutator?: Symbol): Promise<[T[], T[]]>;
     delete<T extends PersistentModel>(modelConstructor: PersistentModelConstructor<T>, condition?: ModelPredicate<T>, mutator?: Symbol): Promise<[T[], T[]]>;
     query<T extends PersistentModel>(modelConstructor: PersistentModelConstructor<T>, predicate?: ModelPredicate<T>, pagination?: PaginationInput<T>): Promise<T[]>;
@@ -28,13 +28,14 @@ declare class StorageClass implements StorageFacade {
     observe<T extends PersistentModel>(modelConstructor?: PersistentModelConstructor<T>, predicate?: ModelPredicate<T>, skipOwn?: Symbol): Observable<SubscriptionMessage<T>>;
     clear(completeObservable?: boolean): Promise<void>;
     batchSave<T extends PersistentModel>(modelConstructor: PersistentModelConstructor<any>, items: ModelInstanceMetadata[], mutator?: Symbol): Promise<[T, OpType][]>;
+    private getUpdateMutationInput;
 }
 declare class ExclusiveStorage implements StorageFacade {
     private storage;
     private readonly mutex;
     constructor(schema: InternalSchema, namespaceResolver: NamespaceResolver, getModelConstructorByModelName: (namsespaceName: string, modelName: string) => PersistentModelConstructor<any>, modelInstanceCreator: ModelInstanceCreator, adapter?: Adapter, sessionId?: string);
     runExclusive<T>(fn: (storage: StorageClass) => Promise<T>): Promise<T>;
-    save<T extends PersistentModel>(model: T, condition?: ModelPredicate<T>, mutator?: Symbol, patches?: Patch[]): Promise<[T, OpType.INSERT | OpType.UPDATE][]>;
+    save<T extends PersistentModel>(model: T, condition?: ModelPredicate<T>, mutator?: Symbol, patchesTuple?: [Patch[], PersistentModel]): Promise<[T, OpType.INSERT | OpType.UPDATE][]>;
     delete<T extends PersistentModel>(model: T, condition?: ModelPredicate<T>, mutator?: Symbol): Promise<[T[], T[]]>;
     delete<T extends PersistentModel>(modelConstructor: PersistentModelConstructor<T>, condition?: ModelPredicate<T>, mutator?: Symbol): Promise<[T[], T[]]>;
     query<T extends PersistentModel>(modelConstructor: PersistentModelConstructor<T>, predicate?: ModelPredicate<T>, pagination?: PaginationInput<T>): Promise<T[]>;

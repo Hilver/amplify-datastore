@@ -2,7 +2,7 @@ import Observable from 'zen-observable-ts';
 import { MutationEvent } from '../';
 import { ModelInstanceCreator } from '../../datastore/datastore';
 import { ExclusiveStorage as Storage } from '../../storage/storage';
-import { ConflictHandler, ErrorHandler, InternalSchema, PersistentModel, PersistentModelConstructor, SchemaModel, TypeConstructorMap } from '../../types';
+import { AuthModeStrategy, ConflictHandler, ErrorHandler, InternalSchema, PersistentModel, PersistentModelConstructor, SchemaModel, TypeConstructorMap } from '../../types';
 import { MutationEventOutbox } from '../outbox';
 import { TransformerMutationType } from '../utils';
 declare type MutationProcessorEvent = {
@@ -18,12 +18,14 @@ declare class MutationProcessor {
     private readonly outbox;
     private readonly modelInstanceCreator;
     private readonly MutationEvent;
+    private readonly amplifyConfig;
+    private readonly authModeStrategy;
     private readonly conflictHandler?;
     private readonly errorHandler?;
     private observer;
     private readonly typeQuery;
     private processing;
-    constructor(schema: InternalSchema, storage: Storage, userClasses: TypeConstructorMap, outbox: MutationEventOutbox, modelInstanceCreator: ModelInstanceCreator, MutationEvent: PersistentModelConstructor<MutationEvent>, conflictHandler?: ConflictHandler, errorHandler?: ErrorHandler);
+    constructor(schema: InternalSchema, storage: Storage, userClasses: TypeConstructorMap, outbox: MutationEventOutbox, modelInstanceCreator: ModelInstanceCreator, MutationEvent: PersistentModelConstructor<MutationEvent>, amplifyConfig: Record<string, any>, authModeStrategy: AuthModeStrategy, conflictHandler?: ConflictHandler, errorHandler?: ErrorHandler);
     private generateQueries;
     private isReady;
     start(): Observable<MutationProcessorEvent>;

@@ -75,8 +75,8 @@ var __read = (this && this.__read) || function (o, n) {
 import { Logger, Mutex } from '@aws-amplify/core';
 import PushStream from 'zen-push';
 import { ModelPredicateCreator } from '../predicates';
-import { OpType, QueryOne, } from '../types';
-import { isModelConstructor, STORAGE, validatePredicate } from '../util';
+import { OpType, QueryOne, isTargetNameAssociation, } from '../types';
+import { isModelConstructor, STORAGE, validatePredicate, valuesEqual, } from '../util';
 import getDefaultAdapter from './adapter/getDefaultAdapter';
 var logger = new Logger('DataStore');
 var StorageClass = /** @class */ (function () {
@@ -128,7 +128,7 @@ var StorageClass = /** @class */ (function () {
             });
         });
     };
-    StorageClass.prototype.save = function (model, condition, mutator, patches) {
+    StorageClass.prototype.save = function (model, condition, mutator, patchesTuple) {
         return __awaiter(this, void 0, void 0, function () {
             var result;
             var _this = this;
@@ -142,24 +142,20 @@ var StorageClass = /** @class */ (function () {
                         result = _a.sent();
                         result.forEach(function (r) {
                             var _a = __read(r, 2), originalElement = _a[0], opType = _a[1];
-                            var updatedElement;
-                            if (opType === OpType.UPDATE && patches && patches.length) {
-                                updatedElement = {};
-                                // extract array of updated fields from patches
-                                var updatedFields = patches.map(function (patch) { return patch.path && patch.path[0]; });
-                                // set original values for these fields
-                                updatedFields.forEach(function (field) {
-                                    updatedElement[field] = originalElement[field];
-                                });
-                                var id = originalElement.id, _version = originalElement._version, _lastChangedAt = originalElement._lastChangedAt, _deleted = originalElement._deleted;
-                                // For update mutations we only want to send fields with changes
-                                // and the required internal fields
-                                updatedElement = __assign(__assign({}, updatedElement), { id: id,
-                                    _version: _version,
-                                    _lastChangedAt: _lastChangedAt,
-                                    _deleted: _deleted });
+                            // truthy when save is called by the Merger
+                            var syncResponse = !!mutator;
+                            var updateMutationInput;
+                            // don't attempt to calc mutation input when storage.save
+                            // is called by Merger, i.e., when processing an AppSync response
+                            if (opType === OpType.UPDATE && !syncResponse) {
+                                updateMutationInput = _this.getUpdateMutationInput(model, originalElement, patchesTuple);
+                                // // an update without changed user fields
+                                // => don't create mutationEvent
+                                if (updateMutationInput === null) {
+                                    return result;
+                                }
                             }
-                            var element = updatedElement || originalElement;
+                            var element = updateMutationInput || originalElement;
                             var modelConstructor = Object.getPrototypeOf(originalElement).constructor;
                             _this.pushStream.next({
                                 model: modelConstructor,
@@ -319,6 +315,42 @@ var StorageClass = /** @class */ (function () {
             });
         });
     };
+    // returns null if no user fields were changed (determined by value comparison)
+    StorageClass.prototype.getUpdateMutationInput = function (model, originalElement, patchesTuple) {
+        var containsPatches = patchesTuple && patchesTuple.length;
+        if (!containsPatches) {
+            return null;
+        }
+        var _a = __read(patchesTuple, 2), patches = _a[0], source = _a[1];
+        var updatedElement = {};
+        // extract array of updated fields from patches
+        var updatedFields = (patches.map(function (patch) { return patch.path && patch.path[0]; }));
+        // check model def for association and replace with targetName if exists
+        var modelConstructor = Object.getPrototypeOf(model)
+            .constructor;
+        var namespace = this.namespaceResolver(modelConstructor);
+        var fields = this.schema.namespaces[namespace].models[modelConstructor.name].fields;
+        // set original values for these fields
+        updatedFields.forEach(function (field) {
+            var targetName = isTargetNameAssociation(fields[field].association);
+            // if field refers to a belongsTo relation, use the target field instead
+            var key = targetName || field;
+            // check field values by value. Ignore unchanged fields
+            if (!valuesEqual(source[key], originalElement[key])) {
+                updatedElement[key] = originalElement[key];
+            }
+        });
+        if (Object.keys(updatedElement).length === 0) {
+            return null;
+        }
+        var id = originalElement.id, _version = originalElement._version, _lastChangedAt = originalElement._lastChangedAt, _deleted = originalElement._deleted;
+        // For update mutations we only want to send fields with changes
+        // and the required internal fields
+        return __assign(__assign({}, updatedElement), { id: id,
+            _version: _version,
+            _lastChangedAt: _lastChangedAt,
+            _deleted: _deleted });
+    };
     return StorageClass;
 }());
 var ExclusiveStorage = /** @class */ (function () {
@@ -329,11 +361,11 @@ var ExclusiveStorage = /** @class */ (function () {
     ExclusiveStorage.prototype.runExclusive = function (fn) {
         return this.mutex.runExclusive(fn.bind(this, this.storage));
     };
-    ExclusiveStorage.prototype.save = function (model, condition, mutator, patches) {
+    ExclusiveStorage.prototype.save = function (model, condition, mutator, patchesTuple) {
         return __awaiter(this, void 0, void 0, function () {
             return __generator(this, function (_a) {
                 return [2 /*return*/, this.runExclusive(function (storage) {
-                        return storage.save(model, condition, mutator, patches);
+                        return storage.save(model, condition, mutator, patchesTuple);
                     })];
             });
         });

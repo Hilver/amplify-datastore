@@ -1,5 +1,5 @@
 import Observable from 'zen-observable-ts';
-import { InternalSchema, PersistentModel, SchemaModel, ModelPredicate } from '../../types';
+import { InternalSchema, PersistentModel, SchemaModel, ModelPredicate, AuthModeStrategy } from '../../types';
 import { TransformerMutationType } from '../utils';
 export declare enum CONTROL_MSG {
     CONNECTED = "CONNECTED"
@@ -13,10 +13,11 @@ declare class SubscriptionProcessor {
     private readonly schema;
     private readonly syncPredicates;
     private readonly amplifyConfig;
+    private readonly authModeStrategy;
     private readonly typeQuery;
     private buffer;
     private dataObserver;
-    constructor(schema: InternalSchema, syncPredicates: WeakMap<SchemaModel, ModelPredicate<any>>, amplifyConfig?: Record<string, any>);
+    constructor(schema: InternalSchema, syncPredicates: WeakMap<SchemaModel, ModelPredicate<any>>, amplifyConfig: Record<string, any>, authModeStrategy: AuthModeStrategy);
     private buildSubscription;
     private getAuthorizationInfo;
     private hubQueryCompletionListener;

@@ -15,7 +15,7 @@ export declare const traverseModel: <T extends Readonly<{
     id: string;
 } & Record<string, any>> = Readonly<{
     id: string;
-} & Record<string, any>>>(modelConstructor: PersistentModelConstructor<T_1>, init: Pick<T_1, Exclude<keyof T_1, "id">> & Partial<ModelInstanceMetadata>) => T_1, getModelConstructorByModelName: (namsespaceName: string, modelName: string) => PersistentModelConstructor<any>) => {
+} & Record<string, any>>>(modelConstructor: PersistentModelConstructor<T_1>, init: Partial<T_1> & Partial<ModelInstanceMetadata>) => T_1, getModelConstructorByModelName: (namsespaceName: string, modelName: string) => PersistentModelConstructor<any>) => {
     modelName: string;
     item: T;
     instance: T;
@@ -49,6 +49,7 @@ export declare function monotonicUlidFactory(seed?: number): ULID;
  */
 export declare function getNow(): number;
 export declare function sortCompareFunction<T extends PersistentModel>(sortPredicates: SortPredicatesGroup<T>): (a: any, b: any) => number;
+export declare function valuesEqual(valA: any, valB: any, nullish?: boolean): boolean;
 export declare const isAWSDate: (val: string) => boolean;
 export declare const isAWSTime: (val: string) => boolean;
 export declare const isAWSDateTime: (val: string) => boolean;

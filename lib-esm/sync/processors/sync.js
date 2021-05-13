@@ -1,3 +1,14 @@
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -63,20 +74,28 @@ var __values = (this && this.__values) || function(o) {
 };
 import API from '@aws-amplify/api';
 import Observable from 'zen-observable-ts';
-import { buildGraphQLOperation, predicateToGraphQLFilter } from '../utils';
-import { jitteredExponentialRetry, ConsoleLogger as Logger, Hub, } from '@aws-amplify/core';
+import { buildGraphQLOperation, getModelAuthModes, getClientSideAuthError, getForbiddenError, predicateToGraphQLFilter, } from '../utils';
+import { jitteredExponentialRetry, ConsoleLogger as Logger, Hub, NonRetryableError, } from '@aws-amplify/core';
 import { ModelPredicateCreator } from '../../predicates';
 var DEFAULT_PAGINATION_LIMIT = 1000;
 var DEFAULT_MAX_RECORDS_TO_SYNC = 10000;
+var opResultDefaults = {
+    items: [],
+    nextToken: null,
+    startedAt: null,
+};
 var logger = new Logger('DataStore');
 var SyncProcessor = /** @class */ (function () {
-    function SyncProcessor(schema, maxRecordsToSync, syncPageSize, syncPredicates) {
+    function SyncProcessor(schema, maxRecordsToSync, syncPageSize, syncPredicates, amplifyConfig, authModeStrategy) {
         if (maxRecordsToSync === void 0) { maxRecordsToSync = DEFAULT_MAX_RECORDS_TO_SYNC; }
         if (syncPageSize === void 0) { syncPageSize = DEFAULT_PAGINATION_LIMIT; }
+        if (amplifyConfig === void 0) { amplifyConfig = {}; }
         this.schema = schema;
         this.maxRecordsToSync = maxRecordsToSync;
         this.syncPageSize = syncPageSize;
         this.syncPredicates = syncPredicates;
+        this.amplifyConfig = amplifyConfig;
+        this.authModeStrategy = authModeStrategy;
         this.typeQuery = new WeakMap();
         this.generateQueries();
     }
@@ -107,7 +126,8 @@ var SyncProcessor = /** @class */ (function () {
     SyncProcessor.prototype.retrievePage = function (modelDefinition, lastSync, nextToken, limit, filter) {
         if (limit === void 0) { limit = null; }
         return __awaiter(this, void 0, void 0, function () {
-            var _a, opName, query, variables, data, _b, opResult, items, newNextToken, startedAt;
+            var _a, opName, query, variables, modelAuthModes, readAuthModes, authModeAttempts, authModeRetry, data, _b, opResult, items, newNextToken, startedAt;
+            var _this = this;
             return __generator(this, function (_c) {
                 switch (_c.label) {
                     case 0:
@@ -118,17 +138,69 @@ var SyncProcessor = /** @class */ (function () {
                             lastSync: lastSync,
                             filter: filter,
                         };
-                        return [4 /*yield*/, this.jitteredRetry({
-                                query: query,
-                                variables: variables,
-                                opName: opName,
-                                modelDefinition: modelDefinition,
+                        return [4 /*yield*/, getModelAuthModes({
+                                authModeStrategy: this.authModeStrategy,
+                                defaultAuthMode: this.amplifyConfig.aws_appsync_authenticationType,
+                                modelName: modelDefinition.name,
+                                schema: this.schema,
                             })];
                     case 1:
+                        modelAuthModes = _c.sent();
+                        readAuthModes = modelAuthModes.READ;
+                        authModeAttempts = 0;
+                        authModeRetry = function () { return __awaiter(_this, void 0, void 0, function () {
+                            var response, error_1, authMode;
+                            var _a;
+                            return __generator(this, function (_b) {
+                                switch (_b.label) {
+                                    case 0:
+                                        _b.trys.push([0, 2, , 4]);
+                                        logger.debug("Attempting sync with authMode: " + readAuthModes[authModeAttempts]);
+                                        return [4 /*yield*/, this.jitteredRetry({
+                                                query: query,
+                                                variables: variables,
+                                                opName: opName,
+                                                modelDefinition: modelDefinition,
+                                                authMode: readAuthModes[authModeAttempts],
+                                            })];
+                                    case 1:
+                                        response = _b.sent();
+                                        logger.debug("Sync successful with authMode: " + readAuthModes[authModeAttempts]);
+                                        return [2 /*return*/, response];
+                                    case 2:
+                                        error_1 = _b.sent();
+                                        authModeAttempts++;
+                                        if (authModeAttempts >= readAuthModes.length) {
+                                            authMode = readAuthModes[authModeAttempts - 1];
+                                            logger.debug("Sync failed with authMode: " + authMode, error_1);
+                                            if (getClientSideAuthError(error_1) || getForbiddenError(error_1)) {
+                                                // return empty list of data so DataStore will continue to sync other models
+                                                logger.warn("User is unauthorized to query " + opName + " with auth mode " + authMode + ". No data could be returned.");
+                                                return [2 /*return*/, {
+                                                        data: (_a = {},
+                                                            _a[opName] = opResultDefaults,
+                                                            _a),
+                                                    }];
+                                            }
+                                            throw error_1;
+                                        }
+                                        logger.debug("Sync failed with authMode: " + readAuthModes[authModeAttempts - 1] + ". Retrying with authMode: " + readAuthModes[authModeAttempts]);
+                                        return [4 /*yield*/, authModeRetry()];
+                                    case 3: return [2 /*return*/, _b.sent()];
+                                    case 4: return [2 /*return*/];
+                                }
+                            });
+                        }); };
+                        return [4 /*yield*/, authModeRetry()];
+                    case 2:
                         data = (_c.sent()).data;
                         _b = opName, opResult = data[_b];
                         items = opResult.items, newNextToken = opResult.nextToken, startedAt = opResult.startedAt;
-                        return [2 /*return*/, { nextToken: newNextToken, startedAt: startedAt, items: items }];
+                        return [2 /*return*/, {
+                                nextToken: newNextToken,
+                                startedAt: startedAt,
+                                items: items,
+                            }];
                 }
             });
         });
@@ -144,13 +216,13 @@ var SyncProcessor = /** @class */ (function () {
         }
     };
     SyncProcessor.prototype.jitteredRetry = function (_a) {
-        var query = _a.query, variables = _a.variables, opName = _a.opName, modelDefinition = _a.modelDefinition;
+        var query = _a.query, variables = _a.variables, opName = _a.opName, modelDefinition = _a.modelDefinition, authMode = _a.authMode;
         return __awaiter(this, void 0, void 0, function () {
             var _this = this;
             return __generator(this, function (_b) {
                 switch (_b.label) {
                     case 0: return [4 /*yield*/, jitteredExponentialRetry(function (query, variables) { return __awaiter(_this, void 0, void 0, function () {
-                            var error_1, hasItems, result, unauthorized, result;
+                            var error_2, clientOrForbiddenErrorMessage, hasItems, result, unauthorized, result;
                             return __generator(this, function (_a) {
                                 switch (_a.label) {
                                     case 0:
@@ -158,23 +230,28 @@ var SyncProcessor = /** @class */ (function () {
                                         return [4 /*yield*/, API.graphql({
                                                 query: query,
                                                 variables: variables,
+                                                authMode: authMode,
                                             })];
                                     case 1: return [2 /*return*/, _a.sent()];
                                     case 2:
-                                        error_1 = _a.sent();
+                                        error_2 = _a.sent();
+                                        clientOrForbiddenErrorMessage = getClientSideAuthError(error_2) || getForbiddenError(error_2);
+                                        if (clientOrForbiddenErrorMessage) {
+                                            throw new NonRetryableError(clientOrForbiddenErrorMessage);
+                                        }
+                                        hasItems = Boolean(error_2 &&
+                                            error_2.data &&
+                                            error_2.data[opName] &&
+                                            error_2.data[opName].items);
                                         if (this.partialDataFeatureFlagEnabled()) {
-                                            hasItems = Boolean(error_1 &&
-                                                error_1.data &&
-                                                error_1.data[opName] &&
-                                                error_1.data[opName].items);
                                             if (hasItems) {
-                                                result = error_1;
+                                                result = error_2;
                                                 result.data[opName].items = result.data[opName].items.filter(function (item) { return item !== null; });
-                                                if (error_1.errors) {
+                                                if (error_2.errors) {
                                                     Hub.dispatch('datastore', {
                                                         event: 'syncQueriesPartialSyncError',
                                                         data: {
-                                                            errors: error_1.errors,
+                                                            errors: error_2.errors,
                                                             modelName: modelDefinition.name,
                                                         },
                                                     });
@@ -182,18 +259,25 @@ var SyncProcessor = /** @class */ (function () {
                                                 return [2 /*return*/, result];
                                             }
                                             else {
-                                                throw error_1;
+                                                throw error_2;
                                             }
                                         }
-                                        unauthorized = error_1.errors.some(function (err) { return err.errorType === 'Unauthorized'; });
+                                        unauthorized = error_2 &&
+                                            error_2.errors &&
+                                            error_2.errors.some(function (err) { return err.errorType === 'Unauthorized'; });
                                         if (unauthorized) {
-                                            result = error_1;
-                                            result.data[opName].items = result.data[opName].items.filter(function (item) { return item !== null; });
-                                            logger.warn('queryError', 'User is unauthorized, some items could not be returned.');
+                                            result = error_2;
+                                            if (hasItems) {
+                                                result.data[opName].items = result.data[opName].items.filter(function (item) { return item !== null; });
+                                            }
+                                            else {
+                                                result.data[opName] = __assign(__assign({}, opResultDefaults), result.data[opName]);
+                                            }
+                                            logger.warn('queryError', "User is unauthorized to query " + opName + ", some items could not be returned.");
                                             return [2 /*return*/, result];
                                         }
                                         else {
-                                            throw error_1;
+                                            throw error_2;
                                         }
                                         return [3 /*break*/, 3];
                                     case 3: return [2 /*return*/];

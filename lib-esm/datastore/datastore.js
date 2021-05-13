@@ -87,10 +87,11 @@ import { Amplify, ConsoleLogger as Logger, Hub, JS } from '@aws-amplify/core';
 import { immerable, produce, setAutoFreeze, enablePatches, } from 'immer';
 import { v4 as uuid4 } from 'uuid';
 import Observable from 'zen-observable-ts';
+import { defaultAuthStrategy, multiAuthStrategy } from '../authModeStrategies';
 import { isPredicatesAll, ModelPredicateCreator, ModelSortPredicateCreator, } from '../predicates';
 import { ExclusiveStorage as Storage } from '../storage/storage';
 import { ControlMessage, SyncEngine } from '../sync';
-import { GraphQLScalarType, isGraphQLScalarType, } from '../types';
+import { GraphQLScalarType, isGraphQLScalarType, AuthModeStrategyType, } from '../types';
 import { DATASTORE, establishRelation, exhaustiveCheck, isModelConstructor, monotonicUlidFactory, STORAGE, SYNC, USER, isNullOrUndefined, } from '../util';
 setAutoFreeze(true);
 enablePatches();
@@ -100,6 +101,9 @@ var isNode = JS.browserOrNode().isNode;
 var SETTING_SCHEMA_VERSION = 'schemaVersion';
 var schema;
 var modelNamespaceMap = new WeakMap();
+// stores data for crafting the correct update mutation input for a model
+// Patch[] - array of changed fields and metadata
+// PersistentModel - the source model, used for diffing object-type fields
 var modelPatchesMap = new WeakMap();
 var getModelDefinition = function (modelConstructor) {
     var namespace = modelNamespaceMap.get(modelConstructor);
@@ -111,9 +115,10 @@ var isValidModelConstructor = function (obj) {
 var namespaceResolver = function (modelConstructor) {
     return modelNamespaceMap.get(modelConstructor);
 };
-var dataStoreClasses;
+// exporting syncClasses for testing outbox.test.ts
+export var syncClasses;
 var userClasses;
-var syncClasses;
+var dataStoreClasses;
 var storageClasses;
 var initSchema = function (userSchema) {
     var _a;
@@ -285,7 +290,8 @@ var createModelClass = function (modelDefinition) {
                 var modelInstanceMetadata = instancesMetadata.has(init)
                     ? init
                     : {};
-                var _id = modelInstanceMetadata.id, _version = modelInstanceMetadata._version, _lastChangedAt = modelInstanceMetadata._lastChangedAt, _deleted = modelInstanceMetadata._deleted;
+                var _version = modelInstanceMetadata._version, _lastChangedAt = modelInstanceMetadata._lastChangedAt, _deleted = modelInstanceMetadata._deleted;
+                var _id = init.id || modelInstanceMetadata.id;
                 var id = 
                 // instancesIds is set by modelInstanceCreator, it is accessible only internally
                 _id !== null && _id !== undefined
@@ -319,7 +325,9 @@ var createModelClass = function (modelDefinition) {
                     modelValidator(k, v);
                 });
             }, function (p) { return (patches = p); });
-            patches.length && modelPatchesMap.set(model, patches);
+            if (patches.length) {
+                modelPatchesMap.set(model, [patches, source]);
+            }
             return model;
         };
         // "private" method (that's hidden via `Setting`) for `withSSRContext` to use
@@ -516,7 +524,7 @@ var DataStore = /** @class */ (function () {
                         return [4 /*yield*/, this.processSyncExpressions()];
                     case 6:
                         _a.syncPredicates = _b.sent();
-                        this.sync = new SyncEngine(schema, namespaceResolver, syncClasses, userClasses, this.storage, modelInstanceCreator, this.maxRecordsToSync, this.syncPageSize, this.conflictHandler, this.errorHandler, this.syncPredicates, this.amplifyConfig);
+                        this.sync = new SyncEngine(schema, namespaceResolver, syncClasses, userClasses, this.storage, modelInstanceCreator, this.maxRecordsToSync, this.syncPageSize, this.conflictHandler, this.errorHandler, this.syncPredicates, this.amplifyConfig, this.authModeStrategy);
                         fullSyncIntervalInMilliseconds = this.fullSyncInterval * 1000 * 60;
                         syncSubscription = this.sync
                             .start({ fullSyncInterval: fullSyncIntervalInMilliseconds })
@@ -601,14 +609,14 @@ var DataStore = /** @class */ (function () {
             });
         }); };
         this.save = function (model, condition) { return __awaiter(_this, void 0, void 0, function () {
-            var patches, modelConstructor, msg, modelDefinition, producedCondition, _a, savedModel;
+            var patchesTuple, modelConstructor, msg, modelDefinition, producedCondition, _a, savedModel;
             var _this = this;
             return __generator(this, function (_b) {
                 switch (_b.label) {
                     case 0: return [4 /*yield*/, this.start()];
                     case 1:
                         _b.sent();
-                        patches = modelPatchesMap.get(model);
+                        patchesTuple = modelPatchesMap.get(model);
                         modelConstructor = model
                             ? model.constructor
                             : undefined;
@@ -622,7 +630,7 @@ var DataStore = /** @class */ (function () {
                         return [4 /*yield*/, this.storage.runExclusive(function (s) { return __awaiter(_this, void 0, void 0, function () {
                                 return __generator(this, function (_a) {
                                     switch (_a.label) {
-                                        case 0: return [4 /*yield*/, s.save(model, producedCondition, undefined, patches)];
+                                        case 0: return [4 /*yield*/, s.save(model, producedCondition, undefined, patchesTuple)];
                                         case 1:
                                             _a.sent();
                                             return [2 /*return*/, s.query(modelConstructor, ModelPredicateCreator.createForId(modelDefinition, model.id))];
@@ -798,10 +806,24 @@ var DataStore = /** @class */ (function () {
         };
         this.configure = function (config) {
             if (config === void 0) { config = {}; }
-            var configDataStore = config.DataStore, configConflictHandler = config.conflictHandler, configErrorHandler = config.errorHandler, configMaxRecordsToSync = config.maxRecordsToSync, configSyncPageSize = config.syncPageSize, configFullSyncInterval = config.fullSyncInterval, configSyncExpressions = config.syncExpressions, configFromAmplify = __rest(config, ["DataStore", "conflictHandler", "errorHandler", "maxRecordsToSync", "syncPageSize", "fullSyncInterval", "syncExpressions"]);
+            var configDataStore = config.DataStore, configAuthModeStrategyType = config.authModeStrategyType, configConflictHandler = config.conflictHandler, configErrorHandler = config.errorHandler, configMaxRecordsToSync = config.maxRecordsToSync, configSyncPageSize = config.syncPageSize, configFullSyncInterval = config.fullSyncInterval, configSyncExpressions = config.syncExpressions, configFromAmplify = __rest(config, ["DataStore", "authModeStrategyType", "conflictHandler", "errorHandler", "maxRecordsToSync", "syncPageSize", "fullSyncInterval", "syncExpressions"]);
             _this.amplifyConfig = __assign(__assign({}, configFromAmplify), _this.amplifyConfig);
             _this.conflictHandler = _this.setConflictHandler(config);
             _this.errorHandler = _this.setErrorHandler(config);
+            var authModeStrategyType = (configDataStore && configDataStore.authModeStrategyType) ||
+                configAuthModeStrategyType ||
+                AuthModeStrategyType.DEFAULT;
+            switch (authModeStrategyType) {
+                case AuthModeStrategyType.MULTI_AUTH:
+                    _this.authModeStrategy = multiAuthStrategy;
+                    break;
+                case AuthModeStrategyType.DEFAULT:
+                    _this.authModeStrategy = defaultAuthStrategy;
+                    break;
+                default:
+                    _this.authModeStrategy = defaultAuthStrategy;
+                    break;
+            }
             _this.syncExpressions =
                 (configDataStore && configDataStore.syncExpressions) ||
                     _this.syncExpressions ||

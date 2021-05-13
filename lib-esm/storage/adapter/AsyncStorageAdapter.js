@@ -115,7 +115,7 @@ var AsyncStorageAdapter = /** @class */ (function () {
     AsyncStorageAdapter.prototype.save = function (model, condition) {
         var e_1, _a;
         return __awaiter(this, void 0, void 0, function () {
-            var modelConstructor, storeName, connectedModels, namespaceName, set, connectionStoreNames, fromDB, predicates, predicateObjs, type, isValid, msg, result, connectionStoreNames_1, connectionStoreNames_1_1, resItem, storeName_1, item, instance, id, opType, e_1_1;
+            var modelConstructor, storeName, connectedModels, namespaceName, set, connectionStoreNames, fromDB, predicates, predicateObjs, type, isValid, msg, result, connectionStoreNames_1, connectionStoreNames_1_1, resItem, storeName_1, item, instance, id, fromDB_1, opType, e_1_1;
             var _this = this;
             return __generator(this, function (_b) {
                 switch (_b.label) {
@@ -148,52 +148,44 @@ var AsyncStorageAdapter = /** @class */ (function () {
                         result = [];
                         _b.label = 2;
                     case 2:
-                        _b.trys.push([2, 11, 12, 17]);
+                        _b.trys.push([2, 9, 10, 15]);
                         connectionStoreNames_1 = __asyncValues(connectionStoreNames);
                         _b.label = 3;
                     case 3: return [4 /*yield*/, connectionStoreNames_1.next()];
                     case 4:
-                        if (!(connectionStoreNames_1_1 = _b.sent(), !connectionStoreNames_1_1.done)) return [3 /*break*/, 10];
+                        if (!(connectionStoreNames_1_1 = _b.sent(), !connectionStoreNames_1_1.done)) return [3 /*break*/, 8];
                         resItem = connectionStoreNames_1_1.value;
                         storeName_1 = resItem.storeName, item = resItem.item, instance = resItem.instance;
                         id = item.id;
                         return [4 /*yield*/, this.db.get(id, storeName_1)];
                     case 5:
-                        opType = (_b.sent())
-                            ? OpType.UPDATE
-                            : OpType.INSERT;
-                        if (!(id === model.id)) return [3 /*break*/, 7];
+                        fromDB_1 = _b.sent();
+                        opType = fromDB_1 ? OpType.UPDATE : OpType.INSERT;
+                        if (!(id === model.id || opType === OpType.INSERT)) return [3 /*break*/, 7];
                         return [4 /*yield*/, this.db.save(item, storeName_1)];
                     case 6:
                         _b.sent();
                         result.push([instance, opType]);
-                        return [3 /*break*/, 9];
-                    case 7:
-                        if (!(opType === OpType.INSERT)) return [3 /*break*/, 9];
-                        return [4 /*yield*/, this.db.save(item, storeName_1)];
-                    case 8:
-                        _b.sent();
-                        result.push([instance, opType]);
-                        _b.label = 9;
-                    case 9: return [3 /*break*/, 3];
-                    case 10: return [3 /*break*/, 17];
-                    case 11:
+                        _b.label = 7;
+                    case 7: return [3 /*break*/, 3];
+                    case 8: return [3 /*break*/, 15];
+                    case 9:
                         e_1_1 = _b.sent();
                         e_1 = { error: e_1_1 };
-                        return [3 /*break*/, 17];
-                    case 12:
-                        _b.trys.push([12, , 15, 16]);
-                        if (!(connectionStoreNames_1_1 && !connectionStoreNames_1_1.done && (_a = connectionStoreNames_1.return))) return [3 /*break*/, 14];
+                        return [3 /*break*/, 15];
+                    case 10:
+                        _b.trys.push([10, , 13, 14]);
+                        if (!(connectionStoreNames_1_1 && !connectionStoreNames_1_1.done && (_a = connectionStoreNames_1.return))) return [3 /*break*/, 12];
                         return [4 /*yield*/, _a.call(connectionStoreNames_1)];
-                    case 13:
+                    case 11:
                         _b.sent();
-                        _b.label = 14;
-                    case 14: return [3 /*break*/, 16];
-                    case 15:
+                        _b.label = 12;
+                    case 12: return [3 /*break*/, 14];
+                    case 13:
                         if (e_1) throw e_1.error;
                         return [7 /*endfinally*/];
-                    case 16: return [7 /*endfinally*/];
-                    case 17: return [2 /*return*/, result];
+                    case 14: return [7 /*endfinally*/];
+                    case 15: return [2 /*return*/, result];
                 }
             });
         });
@@ -636,7 +628,7 @@ var AsyncStorageAdapter = /** @class */ (function () {
         var relations_2, relations_2_1, models_1, models_1_1, models_2, models_2_1;
         var e_7, _a, e_8, _b, e_9, _c;
         return __awaiter(this, void 0, void 0, function () {
-            var rel, relationType, modelName, storeName, index, _d, model, allRecords, recordToDelete, e_8_1, model, allRecords, childrenArray, e_9_1, e_7_1;
+            var rel, relationType, modelName, targetName, storeName, index, _d, model, hasOneIndex, hasOneCustomField, value, allRecords, recordToDelete, e_8_1, model, allRecords, childrenArray, e_9_1, e_7_1;
             var _this = this;
             return __generator(this, function (_e) {
                 switch (_e.label) {
@@ -648,7 +640,7 @@ var AsyncStorageAdapter = /** @class */ (function () {
                     case 2:
                         if (!(relations_2_1 = _e.sent(), !relations_2_1.done)) return [3 /*break*/, 34];
                         rel = relations_2_1.value;
-                        relationType = rel.relationType, modelName = rel.modelName;
+                        relationType = rel.relationType, modelName = rel.modelName, targetName = rel.targetName;
                         storeName = this.getStorename(nameSpace, modelName);
                         index = getIndex(this.schema.namespaces[nameSpace].relationships[modelName]
                             .relationTypes, srcModel) ||
@@ -671,10 +663,13 @@ var AsyncStorageAdapter = /** @class */ (function () {
                     case 5:
                         if (!(models_1_1 = _e.sent(), !models_1_1.done)) return [3 /*break*/, 9];
                         model = models_1_1.value;
+                        hasOneIndex = index || 'byId';
+                        hasOneCustomField = targetName in model;
+                        value = hasOneCustomField ? model[targetName] : model.id;
                         return [4 /*yield*/, this.db.getAll(storeName)];
                     case 6:
                         allRecords = _e.sent();
-                        recordToDelete = allRecords.filter(function (childItem) { return childItem[index] === model.id; });
+                        recordToDelete = allRecords.filter(function (childItem) { return childItem[hasOneIndex] === value; });
                         return [4 /*yield*/, this.deleteTraverse(this.schema.namespaces[nameSpace].relationships[modelName]
                                 .relationTypes, recordToDelete, modelName, nameSpace, deleteQueue)];
                     case 7:

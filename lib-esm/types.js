@@ -44,6 +44,20 @@ export function isAssociatedWith(obj) {
 export function isTargetNameAssociation(obj) {
     return obj && obj.targetName;
 }
+export var ModelAttributeAuthAllow;
+(function (ModelAttributeAuthAllow) {
+    ModelAttributeAuthAllow["OWNER"] = "owner";
+    ModelAttributeAuthAllow["GROUPS"] = "groups";
+    ModelAttributeAuthAllow["PRIVATE"] = "private";
+    ModelAttributeAuthAllow["PUBLIC"] = "public";
+})(ModelAttributeAuthAllow || (ModelAttributeAuthAllow = {}));
+export var ModelAttributeAuthProvider;
+(function (ModelAttributeAuthProvider) {
+    ModelAttributeAuthProvider["USER_POOLS"] = "userPools";
+    ModelAttributeAuthProvider["OIDC"] = "oidc";
+    ModelAttributeAuthProvider["IAM"] = "iam";
+    ModelAttributeAuthProvider["API_KEY"] = "apiKey";
+})(ModelAttributeAuthProvider || (ModelAttributeAuthProvider = {}));
 export var GraphQLScalarType;
 (function (GraphQLScalarType) {
     GraphQLScalarType[GraphQLScalarType["ID"] = 0] = "ID";
@@ -157,6 +171,18 @@ export var SortDirection;
     SortDirection["ASCENDING"] = "ASCENDING";
     SortDirection["DESCENDING"] = "DESCENDING";
 })(SortDirection || (SortDirection = {}));
+export var AuthModeStrategyType;
+(function (AuthModeStrategyType) {
+    AuthModeStrategyType["DEFAULT"] = "DEFAULT";
+    AuthModeStrategyType["MULTI_AUTH"] = "MULTI_AUTH";
+})(AuthModeStrategyType || (AuthModeStrategyType = {}));
+export var ModelOperation;
+(function (ModelOperation) {
+    ModelOperation["CREATE"] = "CREATE";
+    ModelOperation["READ"] = "READ";
+    ModelOperation["UPDATE"] = "UPDATE";
+    ModelOperation["DELETE"] = "DELETE";
+})(ModelOperation || (ModelOperation = {}));
 export function syncExpression(modelConstructor, conditionProducer) {
     return __awaiter(this, void 0, void 0, function () {
         return __generator(this, function (_a) {

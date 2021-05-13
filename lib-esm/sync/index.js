@@ -95,7 +95,7 @@ export var ControlMessage;
     ControlMessage["SYNC_ENGINE_READY"] = "ready";
 })(ControlMessage || (ControlMessage = {}));
 var SyncEngine = /** @class */ (function () {
-    function SyncEngine(schema, namespaceResolver, modelClasses, userModelClasses, storage, modelInstanceCreator, maxRecordsToSync, syncPageSize, conflictHandler, errorHandler, syncPredicates, amplifyConfig) {
+    function SyncEngine(schema, namespaceResolver, modelClasses, userModelClasses, storage, modelInstanceCreator, maxRecordsToSync, syncPageSize, conflictHandler, errorHandler, syncPredicates, amplifyConfig, authModeStrategy) {
         if (amplifyConfig === void 0) { amplifyConfig = {}; }
         this.schema = schema;
         this.namespaceResolver = namespaceResolver;
@@ -107,13 +107,14 @@ var SyncEngine = /** @class */ (function () {
         this.syncPageSize = syncPageSize;
         this.syncPredicates = syncPredicates;
         this.amplifyConfig = amplifyConfig;
+        this.authModeStrategy = authModeStrategy;
         this.online = false;
         var MutationEvent = this.modelClasses['MutationEvent'];
-        this.outbox = new MutationEventOutbox(this.schema, this.namespaceResolver, MutationEvent, ownSymbol);
+        this.outbox = new MutationEventOutbox(this.schema, MutationEvent, modelInstanceCreator, ownSymbol);
         this.modelMerger = new ModelMerger(this.outbox, ownSymbol);
-        this.syncQueriesProcessor = new SyncProcessor(this.schema, this.maxRecordsToSync, this.syncPageSize, this.syncPredicates);
-        this.subscriptionsProcessor = new SubscriptionProcessor(this.schema, this.syncPredicates, this.amplifyConfig);
-        this.mutationsProcessor = new MutationProcessor(this.schema, this.storage, this.userModelClasses, this.outbox, this.modelInstanceCreator, MutationEvent, conflictHandler, errorHandler);
+        this.syncQueriesProcessor = new SyncProcessor(this.schema, this.maxRecordsToSync, this.syncPageSize, this.syncPredicates, this.amplifyConfig, this.authModeStrategy);
+        this.subscriptionsProcessor = new SubscriptionProcessor(this.schema, this.syncPredicates, this.amplifyConfig, this.authModeStrategy);
+        this.mutationsProcessor = new MutationProcessor(this.schema, this.storage, this.userModelClasses, this.outbox, this.modelInstanceCreator, MutationEvent, this.amplifyConfig, this.authModeStrategy, conflictHandler, errorHandler);
         this.datastoreConnectivity = new DataStoreConnectivity();
     }
     SyncEngine.prototype.start = function (params) {

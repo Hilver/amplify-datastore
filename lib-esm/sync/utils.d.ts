@@ -1,5 +1,7 @@
+import { GRAPHQL_AUTH_MODE } from '@aws-amplify/api-graphql';
+import { GraphQLAuthError } from '@aws-amplify/api';
 import { ModelInstanceCreator } from '../datastore/datastore';
-import { AuthorizationRule, GraphQLCondition, GraphQLFilter, OpType, PersistentModel, PersistentModelConstructor, PredicatesGroup, RelationshipType, SchemaModel, SchemaNamespace, SchemaNonModel } from '../types';
+import { AuthorizationRule, GraphQLCondition, GraphQLFilter, OpType, PersistentModel, PersistentModelConstructor, PredicatesGroup, RelationshipType, SchemaModel, SchemaNamespace, SchemaNonModel, ModelOperation, InternalSchema, AuthModeStrategy } from '../types';
 import { MutationEvent } from './';
 declare enum GraphQLOperationType {
     LIST = "query",
@@ -25,4 +27,14 @@ export declare function predicateToGraphQLFilter(predicatesGroup: PredicatesGrou
 export declare function getUserGroupsFromToken(token: {
     [field: string]: any;
 }, rule: AuthorizationRule): string[];
+export declare function getModelAuthModes({ authModeStrategy, defaultAuthMode, modelName, schema, }: {
+    authModeStrategy: AuthModeStrategy;
+    defaultAuthMode: GRAPHQL_AUTH_MODE;
+    modelName: string;
+    schema: InternalSchema;
+}): Promise<{
+    [key in ModelOperation]: GRAPHQL_AUTH_MODE[];
+}>;
+export declare function getForbiddenError(error: any): any;
+export declare function getClientSideAuthError(error: any): GraphQLAuthError;
 export {};

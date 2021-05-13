@@ -71,7 +71,7 @@ import Cache from '@aws-amplify/cache';
 import { ConsoleLogger as Logger, Hub } from '@aws-amplify/core';
 import { CONTROL_MSG as PUBSUB_CONTROL_MSG } from '@aws-amplify/pubsub';
 import Observable from 'zen-observable-ts';
-import { buildSubscriptionGraphQLOperation, getAuthorizationRules, getUserGroupsFromToken, TransformerMutationType, } from '../utils';
+import { buildSubscriptionGraphQLOperation, getAuthorizationRules, getModelAuthModes, getUserGroupsFromToken, TransformerMutationType, } from '../utils';
 import { ModelPredicateCreator } from '../../predicates';
 import { validatePredicate } from '../../util';
 var logger = new Logger('DataStore');
@@ -86,26 +86,27 @@ export var USER_CREDENTIALS;
     USER_CREDENTIALS[USER_CREDENTIALS["auth"] = 2] = "auth";
 })(USER_CREDENTIALS || (USER_CREDENTIALS = {}));
 var SubscriptionProcessor = /** @class */ (function () {
-    function SubscriptionProcessor(schema, syncPredicates, amplifyConfig) {
+    function SubscriptionProcessor(schema, syncPredicates, amplifyConfig, authModeStrategy) {
         if (amplifyConfig === void 0) { amplifyConfig = {}; }
         this.schema = schema;
         this.syncPredicates = syncPredicates;
         this.amplifyConfig = amplifyConfig;
+        this.authModeStrategy = authModeStrategy;
         this.typeQuery = new WeakMap();
         this.buffer = [];
     }
-    SubscriptionProcessor.prototype.buildSubscription = function (namespace, model, transformerMutationType, userCredentials, cognitoTokenPayload, oidcTokenPayload) {
+    SubscriptionProcessor.prototype.buildSubscription = function (namespace, model, transformerMutationType, userCredentials, cognitoTokenPayload, oidcTokenPayload, authMode) {
         var aws_appsync_authenticationType = this.amplifyConfig.aws_appsync_authenticationType;
-        var _a = this.getAuthorizationInfo(model, userCredentials, aws_appsync_authenticationType, cognitoTokenPayload, oidcTokenPayload) || {}, authMode = _a.authMode, isOwner = _a.isOwner, ownerField = _a.ownerField, ownerValue = _a.ownerValue;
+        var _a = this.getAuthorizationInfo(model, userCredentials, aws_appsync_authenticationType, cognitoTokenPayload, oidcTokenPayload, authMode) || {}, isOwner = _a.isOwner, ownerField = _a.ownerField, ownerValue = _a.ownerValue;
         var _b = __read(buildSubscriptionGraphQLOperation(namespace, model, transformerMutationType, isOwner, ownerField), 3), opType = _b[0], opName = _b[1], query = _b[2];
         return { authMode: authMode, opType: opType, opName: opName, query: query, isOwner: isOwner, ownerField: ownerField, ownerValue: ownerValue };
     };
-    SubscriptionProcessor.prototype.getAuthorizationInfo = function (model, userCredentials, defaultAuthType, cognitoTokenPayload, oidcTokenPayload) {
+    SubscriptionProcessor.prototype.getAuthorizationInfo = function (model, userCredentials, defaultAuthType, cognitoTokenPayload, oidcTokenPayload, authMode) {
         if (cognitoTokenPayload === void 0) { cognitoTokenPayload = {}; }
         if (oidcTokenPayload === void 0) { oidcTokenPayload = {}; }
         var rules = getAuthorizationRules(model);
         // Return null if user doesn't have proper credentials for private API with IAM auth
-        var iamPrivateAuth = defaultAuthType === GRAPHQL_AUTH_MODE.AWS_IAM &&
+        var iamPrivateAuth = authMode === GRAPHQL_AUTH_MODE.AWS_IAM &&
             rules.find(function (rule) { return rule.authStrategy === 'private' && rule.provider === 'iam'; });
         if (iamPrivateAuth && userCredentials === USER_CREDENTIALS.unauth) {
             return null;
@@ -118,8 +119,8 @@ var SubscriptionProcessor = /** @class */ (function () {
             return rule.authStrategy === 'groups' &&
                 ['userPools', 'oidc'].includes(rule.provider);
         });
-        var validGroup = (defaultAuthType === GRAPHQL_AUTH_MODE.AMAZON_COGNITO_USER_POOLS ||
-            defaultAuthType === GRAPHQL_AUTH_MODE.OPENID_CONNECT) &&
+        var validGroup = (authMode === GRAPHQL_AUTH_MODE.AMAZON_COGNITO_USER_POOLS ||
+            authMode === GRAPHQL_AUTH_MODE.OPENID_CONNECT) &&
             groupAuthRules.find(function (groupAuthRule) {
                 // validate token against groupClaim
                 var cognitoUserGroups = getUserGroupsFromToken(cognitoTokenPayload, groupAuthRule);
@@ -130,14 +131,14 @@ var SubscriptionProcessor = /** @class */ (function () {
             });
         if (validGroup) {
             return {
-                authMode: defaultAuthType,
+                authMode: authMode,
                 isOwner: false,
             };
         }
         // Owner auth needs additional values to be returned in order to create the subscription with
         // the correct parameters so we are getting the owner value from the Cognito token via the
         // identityClaim from the auth rule.
-        var cognitoOwnerAuthRules = defaultAuthType === GRAPHQL_AUTH_MODE.AMAZON_COGNITO_USER_POOLS
+        var cognitoOwnerAuthRules = authMode === GRAPHQL_AUTH_MODE.AMAZON_COGNITO_USER_POOLS
             ? rules.filter(function (rule) {
                 return rule.authStrategy === 'owner' && rule.provider === 'userPools';
             })
@@ -160,7 +161,7 @@ var SubscriptionProcessor = /** @class */ (function () {
         // Owner auth needs additional values to be returned in order to create the subscription with
         // the correct parameters so we are getting the owner value from the OIDC token via the
         // identityClaim from the auth rule.
-        var oidcOwnerAuthRules = defaultAuthType === GRAPHQL_AUTH_MODE.OPENID_CONNECT
+        var oidcOwnerAuthRules = authMode === GRAPHQL_AUTH_MODE.OPENID_CONNECT
             ? rules.filter(function (rule) { return rule.authStrategy === 'owner' && rule.provider === 'oidc'; })
             : [];
         oidcOwnerAuthRules.forEach(function (ownerAuthRule) {
@@ -177,9 +178,9 @@ var SubscriptionProcessor = /** @class */ (function () {
         if (ownerAuthInfo) {
             return ownerAuthInfo;
         }
-        // Fallback: return default auth type
+        // Fallback: return authMode or default auth type
         return {
-            authMode: defaultAuthType,
+            authMode: authMode || defaultAuthType,
             isOwner: false,
         };
     };
@@ -193,7 +194,9 @@ var SubscriptionProcessor = /** @class */ (function () {
         var _this = this;
         var ctlObservable = new Observable(function (observer) {
             var promises = [];
-            var subscriptions = [];
+            // Creating subs for each model/operation combo so they can be unsubscribed
+            // independently, since the auth retry behavior is asynchronous.
+            var subscriptions = {};
             var cognitoTokenPayload, oidcTokenPayload;
             var userCredentials = USER_CREDENTIALS.none;
             (function () { return __awaiter(_this, void 0, void 0, function () {
@@ -261,33 +264,50 @@ var SubscriptionProcessor = /** @class */ (function () {
                                     return syncable;
                                 })
                                     .forEach(function (modelDefinition) { return __awaiter(_this, void 0, void 0, function () {
-                                    var queriesMetadata;
+                                    var modelAuthModes, readAuthModes, operations, operationAuthModeAttempts, authModeRetry;
+                                    var _a, _b, _c;
                                     var _this = this;
-                                    return __generator(this, function (_a) {
-                                        queriesMetadata = [
-                                            TransformerMutationType.CREATE,
-                                            TransformerMutationType.UPDATE,
-                                            TransformerMutationType.DELETE,
-                                        ].map(function (op) {
-                                            return _this.buildSubscription(namespace, modelDefinition, op, userCredentials, cognitoTokenPayload, oidcTokenPayload);
-                                        });
-                                        queriesMetadata.forEach(function (_a) {
-                                            var transformerMutationType = _a.opType, opName = _a.opName, query = _a.query, isOwner = _a.isOwner, ownerField = _a.ownerField, ownerValue = _a.ownerValue, authMode = _a.authMode;
-                                            return __awaiter(_this, void 0, void 0, function () {
-                                                var variables, queryObservable, subscriptionReadyCallback;
-                                                var _this = this;
-                                                return __generator(this, function (_b) {
-                                                    variables = {};
+                                    return __generator(this, function (_d) {
+                                        switch (_d.label) {
+                                            case 0: return [4 /*yield*/, getModelAuthModes({
+                                                    authModeStrategy: this.authModeStrategy,
+                                                    defaultAuthMode: this.amplifyConfig
+                                                        .aws_appsync_authenticationType,
+                                                    modelName: modelDefinition.name,
+                                                    schema: this.schema,
+                                                })];
+                                            case 1:
+                                                modelAuthModes = _d.sent();
+                                                readAuthModes = modelAuthModes.READ;
+                                                subscriptions = __assign(__assign({}, subscriptions), (_a = {}, _a[modelDefinition.name] = (_b = {},
+                                                    _b[TransformerMutationType.CREATE] = [],
+                                                    _b[TransformerMutationType.UPDATE] = [],
+                                                    _b[TransformerMutationType.DELETE] = [],
+                                                    _b), _a));
+                                                operations = [
+                                                    TransformerMutationType.CREATE,
+                                                    TransformerMutationType.UPDATE,
+                                                    TransformerMutationType.DELETE,
+                                                ];
+                                                operationAuthModeAttempts = (_c = {},
+                                                    _c[TransformerMutationType.CREATE] = 0,
+                                                    _c[TransformerMutationType.UPDATE] = 0,
+                                                    _c[TransformerMutationType.DELETE] = 0,
+                                                    _c);
+                                                authModeRetry = function (operation) {
+                                                    var _a = _this.buildSubscription(namespace, modelDefinition, operation, userCredentials, cognitoTokenPayload, oidcTokenPayload, readAuthModes[operationAuthModeAttempts[operation]]), transformerMutationType = _a.opType, opName = _a.opName, query = _a.query, isOwner = _a.isOwner, ownerField = _a.ownerField, ownerValue = _a.ownerValue, authMode = _a.authMode;
+                                                    var variables = {};
                                                     if (isOwner) {
                                                         if (!ownerValue) {
-                                                            // Check if there is an owner field, check where this error should be located
                                                             observer.error('Owner field required, sign in is needed in order to perform this operation');
-                                                            return [2 /*return*/];
+                                                            return;
                                                         }
                                                         variables[ownerField] = ownerValue;
                                                     }
-                                                    queryObservable = API.graphql(__assign({ query: query, variables: variables }, { authMode: authMode }));
-                                                    subscriptions.push(queryObservable
+                                                    logger.debug("Attempting " + operation + " subscription with authMode: " + readAuthModes[operationAuthModeAttempts[operation]]);
+                                                    var queryObservable = API.graphql(__assign({ query: query, variables: variables }, { authMode: authMode }));
+                                                    var subscriptionReadyCallback;
+                                                    subscriptions[modelDefinition.name][transformerMutationType].push(queryObservable
                                                         .map(function (_a) {
                                                         var value = _a.value;
                                                         return value;
@@ -319,11 +339,30 @@ var SubscriptionProcessor = /** @class */ (function () {
                                                             var _a = subscriptionError.error, _b = __read((_a === void 0 ? {
                                                                 errors: [],
                                                             } : _a).errors, 1), _c = _b[0], _d = (_c === void 0 ? {} : _c).message, message = _d === void 0 ? '' : _d;
+                                                            if (message.includes(PUBSUB_CONTROL_MSG.REALTIME_SUBSCRIPTION_INIT_ERROR) ||
+                                                                message.includes(PUBSUB_CONTROL_MSG.CONNECTION_FAILED)) {
+                                                                // Unsubscribe and clear subscription array for model/operation
+                                                                subscriptions[modelDefinition.name][transformerMutationType].forEach(function (subscription) { return subscription.unsubscribe(); });
+                                                                subscriptions[modelDefinition.name][transformerMutationType] = [];
+                                                                operationAuthModeAttempts[operation]++;
+                                                                if (operationAuthModeAttempts[operation] >=
+                                                                    readAuthModes.length) {
+                                                                    logger.debug(operation + " subscription failed with authMode: " + readAuthModes[operationAuthModeAttempts[operation] - 1]);
+                                                                    logger.warn('subscriptionError', message);
+                                                                    return;
+                                                                }
+                                                                else {
+                                                                    logger.debug(operation + " subscription failed with authMode: " + readAuthModes[operationAuthModeAttempts[operation] - 1] + ". Retrying with authMode: " + readAuthModes[operationAuthModeAttempts[operation]]);
+                                                                    authModeRetry(operation);
+                                                                    return;
+                                                                }
+                                                            }
                                                             logger.warn('subscriptionError', message);
                                                             if (typeof subscriptionReadyCallback === 'function') {
                                                                 subscriptionReadyCallback();
                                                             }
-                                                            if (message.includes('"errorType":"Unauthorized"')) {
+                                                            if (message.includes('"errorType":"Unauthorized"') ||
+                                                                message.includes('"errorType":"OperationDisabled"')) {
                                                                 return;
                                                             }
                                                             observer.error(message);
@@ -346,11 +385,10 @@ var SubscriptionProcessor = /** @class */ (function () {
                                                             }
                                                         });
                                                     }); })());
-                                                    return [2 /*return*/];
-                                                });
-                                            });
-                                        });
-                                        return [2 /*return*/];
+                                                };
+                                                operations.forEach(function (op) { return authModeRetry(op); });
+                                                return [2 /*return*/];
+                                        }
                                     });
                                 }); });
                             });
@@ -360,7 +398,11 @@ var SubscriptionProcessor = /** @class */ (function () {
                 });
             }); })();
             return function () {
-                subscriptions.forEach(function (subscription) { return subscription.unsubscribe(); });
+                Object.keys(subscriptions).map(function (modelName) {
+                    subscriptions[modelName][TransformerMutationType.CREATE].forEach(function (subscription) { return subscription.unsubscribe(); });
+                    subscriptions[modelName][TransformerMutationType.UPDATE].forEach(function (subscription) { return subscription.unsubscribe(); });
+                    subscriptions[modelName][TransformerMutationType.DELETE].forEach(function (subscription) { return subscription.unsubscribe(); });
+                });
             };
         });
         var dataObservable = new Observable(function (observer) {
