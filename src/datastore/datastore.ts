@@ -369,7 +369,7 @@ const createModelClass = <T extends PersistentModel>(
 						_deleted,
 					} = modelInstanceMetadata;
 
-					const _id = init.id || modelInstanceMetadata.id
+					const _id = init.id || modelInstanceMetadata.id;
 
 					const id =
 						// instancesIds is set by modelInstanceCreator, it is accessible only internally
